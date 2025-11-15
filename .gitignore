@@ -1,0 +1,54 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build output
+seedsafe
+seedsafe-linux-arm
+*.test
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python (if needed)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+
+# Test and coverage
+*.cover
+*.coverage
+coverage.txt
+coverage.html
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# Image test files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
