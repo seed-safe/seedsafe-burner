@@ -9,9 +9,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/seed-safe/seedsafe/verification"
 )
 
 var pngOutputFile string
+var Version = "unknown"
+var BuildDate = "unknown"
 
 func main() {
 	// Parse command-line flags
@@ -20,6 +24,8 @@ func main() {
 
 	fmt.Printf("\n═══════════════════════════════\n")
 	fmt.Printf("  SeedSafe Card Burner\n")
+	fmt.Printf("  Version : %s\n", Version)
+	fmt.Printf("  Built   : %s\n", BuildDate)
 	fmt.Printf("  Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	if pngOutputFile != "" {
 		fmt.Printf("  PNG Output: %s\n", pngOutputFile)
@@ -68,6 +74,8 @@ func main() {
 		fmt.Println("│ 5. Re-detect laser               │")
 		fmt.Println("│ 6. Settings                      │")
 		fmt.Println("│ 7. Exit                          │")
+		fmt.Println("│ 8. Cut acrylic pocket outline    │")
+		fmt.Println("│ 9. Verify boot + image hash      │")
 		fmt.Println("└──────────────────────────────────┘")
 
 		if settings.MockMode {
@@ -76,7 +84,7 @@ func main() {
 			fmt.Printf("  [%s]\n", settings.Port)
 		}
 
-		fmt.Print("\nSelect (1-7): ")
+		fmt.Print("\nSelect (1-9): ")
 
 		scanner.Scan()
 		choice := scanner.Text()
@@ -97,8 +105,59 @@ func main() {
 		case "7":
 			fmt.Println("Goodbye!")
 			return
+		case "8":
+			cutPocketOutline(settings)
+		case "9":
+			ensureBootVerified()
 		}
 	}
+}
+
+func ensureBootVerified() {
+	if len(verification.ExpectedFileHashes) == 0 {
+		fmt.Println("⚠ Boot verification data unavailable - skipping integrity check")
+		return
+	}
+
+	bootPath := detectBootMount()
+	if bootPath == "" {
+		fmt.Println("⚠ Could not locate boot partition for integrity check - skipping")
+		return
+	}
+
+	fmt.Printf("\n🔐 Verifying boot files in %s ...\n", bootPath)
+	failures := verification.VerifyBootFiles(bootPath)
+	if len(failures) > 0 {
+		fmt.Println("✗ Boot integrity check failed!")
+		for _, msg := range failures {
+			fmt.Printf("  - %s\n", msg)
+		}
+		fmt.Println("\nPlease power off, reflash the SD card from a trusted image, and try again.")
+		os.Exit(1)
+	}
+	fmt.Println("✓ Boot files verified.")
+
+	if hash, err := GetImageHash(); err != nil {
+		fmt.Printf("⚠ Full image hash unavailable: %v\n", err)
+	} else {
+		fmt.Printf("Full Image SHA256: %s\n", hash)
+	}
+}
+
+func detectBootMount() string {
+	if custom := os.Getenv("SEEDSAFE_BOOT_PATH"); custom != "" {
+		if info, err := os.Stat(custom); err == nil && info.IsDir() {
+			return custom
+		}
+	}
+
+	candidates := []string{"/boot", "/mnt/boot", "/boot/firmware", "/flash"}
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			return path
+		}
+	}
+	return ""
 }
 
 func redetectLaser(settings *BurnSettings) {
@@ -129,6 +188,15 @@ func burnCard(settings *BurnSettings) {
 
 	fmt.Printf("  Name: %s\n", data.Name)
 	fmt.Printf("  Fingerprint: %08x\n", data.Fingerprint)
+	if trace := data.TraceString(); trace != "" {
+		fmt.Printf("  Trace: %s\n", trace)
+	}
+	if data.ImageHash != "" {
+		fmt.Printf("  Image SHA256: %s\n", data.ImageHash)
+	}
+	if data.DeviceSerial != "" {
+		fmt.Printf("  Device serial: %s\n", data.DeviceSerial)
+	}
 
 	fmt.Println("\n─── Rendering Image ───")
 	img, err := GenerateCardImage(data)
@@ -207,8 +275,24 @@ func generateDescriptor(settings *BurnSettings) {
 		fmt.Println("✓ Using production timelock (1 year / 1.25 years)")
 	}
 
-	// Step 2: Collect xpubs from user
-	xpubs, err := CollectXpubsManual()
+	// Step 2: Choose xpub input method
+	fmt.Println("\nSelect xpub input method:")
+	fmt.Println("  1. Scan xpub:name QR codes via Pi camera")
+	fmt.Println("  2. Enter xpubs manually")
+	fmt.Print("\nChoice (1-2): ")
+
+	scanner.Scan()
+	inputMethod := strings.TrimSpace(scanner.Text())
+	if inputMethod != "1" && inputMethod != "2" {
+		inputMethod = "2"
+	}
+
+	var xpubs []string
+	if inputMethod == "1" {
+		xpubs, err = CollectXpubsViaCamera(5, scanner)
+	} else {
+		xpubs, err = CollectXpubsManual()
+	}
 	if err != nil {
 		fmt.Printf("✗ Error collecting xpubs: %v\n", err)
 		return
@@ -370,5 +454,26 @@ func configureSettings(settings *BurnSettings, scanner *bufio.Scanner) {
 		for _, port := range ports {
 			fmt.Printf("  - %s\n", port)
 		}
+	}
+}
+
+func cutPocketOutline(settings *BurnSettings) {
+	fmt.Println("\n─── Acrylic Pocket Outline (Cut) ───")
+	fmt.Println("This will cut a full 2mm acrylic pocket outline in a single pass.")
+	fmt.Println("Ensure the acrylic sheet is clamped and focus is correct.\n")
+
+	gcode := GeneratePocketOutlineGCode(900, 200)
+	fmt.Printf("  ✓ Generated %d bytes of G-code\n", len(gcode))
+
+	if settings.MockMode {
+		fmt.Print("\nPress Enter to simulate cut... ")
+	} else {
+		fmt.Print("\nPress Enter to START CUT... ")
+	}
+	bufio.NewReader(os.Stdin).ReadBytes('\n')
+
+	fmt.Println("\n─── Cutting Pocket Outline ───")
+	if err := BurnToLaser(gcode, settings); err != nil {
+		fmt.Printf("✗ Error: %v\n", err)
 	}
 }

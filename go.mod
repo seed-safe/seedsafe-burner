@@ -5,6 +5,7 @@ go 1.24.1
 require (
 	github.com/btcsuite/btcd v0.24.2
 	github.com/btcsuite/btcd/btcutil v1.1.6
+	github.com/liyue201/goqr v0.0.0-20210302035109-0e41a2c4c3d1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/tyler-smith/go-bip39 v1.1.0
 	go.bug.st/serial v1.6.2

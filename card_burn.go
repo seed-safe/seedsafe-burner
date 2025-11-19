@@ -134,8 +134,8 @@ func ImageToGCode(img image.Image, power int, speed int) []byte {
 	width := bounds.Max.X
 	height := bounds.Max.Y
 
-	const scale = 0.1 // 0.1mm per pixel
-	const xOffset = 3.0 // Start 3mm from left edge
+	const scale = 0.1  // 0.1mm per pixel
+	const xOffset = 0.0
 
 	var gcode bytes.Buffer
 
@@ -144,7 +144,8 @@ func ImageToGCode(img image.Image, power int, speed int) []byte {
 	gcode.WriteString("G90\n")       // absolute positioning
 	gcode.WriteString("M5\n")        // laser off
 	gcode.WriteString("G92 X0 Y0\n") // zero work coordinates
-	gcode.WriteString("M4 S0\n")     // dynamic laser mode
+	gcode.WriteString(fmt.Sprintf("G0 X%.3f Y0.000\n", xOffset))
+	gcode.WriteString("M4 S0\n") // dynamic laser mode
 	gcode.WriteString(fmt.Sprintf("F%d\n", speed))
 
 	// Print progress preview as rows are processed
@@ -429,7 +430,7 @@ func BurnToLaser(gcode []byte, settings *BurnSettings) error {
 func TraceFrame(settings *BurnSettings) error {
 	var gcode bytes.Buffer
 
-	const xOffset = 3.0 // Match burning offset
+	const xOffset = 0.0
 
 	gcode.WriteString("G21\nG90\n")
 	gcode.WriteString(fmt.Sprintf("G0 X%.1f Y0\n", xOffset))
@@ -454,20 +455,20 @@ func min(a, b int) int {
 // GenerateHatchPattern creates a hatch fill pattern for burning a pocket in acrylic
 // This creates horizontal scan lines to remove material and create a recess
 func GenerateHatchPattern(power int, speed int) []byte {
-	const xOffset float64 = 3.0      // Match card burning offset (mm)
-	const pocketWidth float64 = 55.0  // mm (54mm card + 1mm clearance)
-	const pocketHeight float64 = 87.0 // mm (86mm card + 1mm clearance)
-	const lineSpacing float64 = 0.3  // mm between hatch lines
+	const xOffset float64 = 0.0
+	const pocketWidth float64 = 56.0  // mm (extra clearance)
+	const pocketHeight float64 = 88.0 // mm (extra clearance)
+	const lineSpacing float64 = 0.2   // mm between hatch lines (more overlap)
 
 	var gcode bytes.Buffer
 
 	// Header
-	gcode.WriteString("G21\n")                       // mm mode
-	gcode.WriteString("G90\n")                       // absolute positioning
-	gcode.WriteString("M5\n")                        // laser off
-	gcode.WriteString("G92 X0 Y0\n")                 // zero work coordinates
-	gcode.WriteString("M4 S0\n")                     // dynamic laser mode
-	gcode.WriteString(fmt.Sprintf("F%d\n", speed))   // feed rate
+	gcode.WriteString("G21\n")                     // mm mode
+	gcode.WriteString("G90\n")                     // absolute positioning
+	gcode.WriteString("M5\n")                      // laser off
+	gcode.WriteString("G92 X0 Y0\n")               // zero work coordinates
+	gcode.WriteString("M4 S0\n")                   // dynamic laser mode
+	gcode.WriteString(fmt.Sprintf("F%d\n", speed)) // feed rate
 
 	fmt.Println("  Generating hatch pattern...")
 
@@ -505,5 +506,53 @@ func GenerateHatchPattern(power int, speed int) []byte {
 	gcode.WriteString(fmt.Sprintf("G0 X%.3f Y0.000\n", xOffset)) // return to start
 	gcode.WriteString("M2\n")                                    // program end
 
+	return gcode.Bytes()
+}
+
+// GeneratePocketOutlineGCode generates a single-pass perimeter cut for the acrylic pocket.
+func GeneratePocketOutlineGCode(power int, speed int) []byte {
+	const xOffset = 0.0
+	const pocketWidth = 55.0
+	const pocketHeight = 87.0
+	const cornerRadius = 3.0
+
+	var gcode bytes.Buffer
+	gcode.WriteString("G21\n")
+	gcode.WriteString("G90\n")
+	gcode.WriteString("M5\n")
+	gcode.WriteString("G92 X0 Y0\n")
+	gcode.WriteString("M4 S0\n")
+	gcode.WriteString(fmt.Sprintf("F%d\n", speed))
+
+	left := xOffset
+	right := xOffset + pocketWidth
+	bottom := 0.0
+	top := pocketHeight
+
+	startX := left + cornerRadius
+	startY := bottom
+
+	gcode.WriteString(fmt.Sprintf("G0 X%.3f Y%.3f S0\n", startX, startY))
+
+	// Bottom edge
+	gcode.WriteString(fmt.Sprintf("G1 X%.3f Y%.3f S%d\n", right-cornerRadius, bottom, power))
+	// Bottom-right corner (CCW)
+	gcode.WriteString(fmt.Sprintf("G3 X%.3f Y%.3f I0 J%.3f S%d\n", right, bottom+cornerRadius, cornerRadius, power))
+	// Right edge
+	gcode.WriteString(fmt.Sprintf("G1 X%.3f Y%.3f S%d\n", right, top-cornerRadius, power))
+	// Top-right corner
+	gcode.WriteString(fmt.Sprintf("G3 X%.3f Y%.3f I-%.3f J0 S%d\n", right-cornerRadius, top, cornerRadius, power))
+	// Top edge
+	gcode.WriteString(fmt.Sprintf("G1 X%.3f Y%.3f S%d\n", left+cornerRadius, top, power))
+	// Top-left corner
+	gcode.WriteString(fmt.Sprintf("G3 X%.3f Y%.3f I0 J-%.3f S%d\n", left, top-cornerRadius, cornerRadius, power))
+	// Left edge
+	gcode.WriteString(fmt.Sprintf("G1 X%.3f Y%.3f S%d\n", left, bottom+cornerRadius, power))
+	// Bottom-left corner
+	gcode.WriteString(fmt.Sprintf("G3 X%.3f Y%.3f I%.3f J0 S%d\n", left+cornerRadius, bottom, cornerRadius, power))
+
+	gcode.WriteString("M5\n")
+	gcode.WriteString(fmt.Sprintf("G0 X%.3f Y0.000\n", xOffset))
+	gcode.WriteString("M2\n")
 	return gcode.Bytes()
 }
