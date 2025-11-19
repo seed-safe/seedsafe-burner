@@ -21,7 +21,7 @@ func main() {
 	flag.Parse()
 
 	fmt.Printf("\n═══════════════════════════════\n")
-	fmt.Printf("  SeedSafe Card Burner v2\n")
+	fmt.Printf("  SeedSafe Card Burner v0.0.2\n")
 	fmt.Printf("  Version : %s\n", Version)
 	fmt.Printf("  Built   : %s\n", BuildDate)
 	fmt.Printf("  Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
@@ -454,3 +454,4 @@ func cutPocketOutline(settings *BurnSettings) {
 		fmt.Printf("✗ Error: %v\n", err)
 	}
 }
+// test
