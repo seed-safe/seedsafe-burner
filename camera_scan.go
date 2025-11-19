@@ -117,7 +117,7 @@ func captureXpubFromCamera() (string, string, error) {
 	}
 
 	for _, code := range codes {
-		payload := strings.TrimSpace(code.PayloadString())
+		payload := strings.TrimSpace(string(code.Payload))
 		xpub, name, err := ExtractXpubFromCard(payload)
 		if err == nil {
 			return xpub, name, nil

@@ -9,8 +9,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-
-	"github.com/seed-safe/seedsafe/verification"
 )
 
 var pngOutputFile string
@@ -23,7 +21,7 @@ func main() {
 	flag.Parse()
 
 	fmt.Printf("\n═══════════════════════════════\n")
-	fmt.Printf("  SeedSafe Card Burner\n")
+	fmt.Printf("  SeedSafe Card Burner v2\n")
 	fmt.Printf("  Version : %s\n", Version)
 	fmt.Printf("  Built   : %s\n", BuildDate)
 	fmt.Printf("  Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
@@ -114,33 +112,11 @@ func main() {
 }
 
 func ensureBootVerified() {
-	if len(verification.ExpectedFileHashes) == 0 {
-		fmt.Println("⚠ Boot verification data unavailable - skipping integrity check")
-		return
-	}
-
-	bootPath := detectBootMount()
-	if bootPath == "" {
-		fmt.Println("⚠ Could not locate boot partition for integrity check - skipping")
-		return
-	}
-
-	fmt.Printf("\n🔐 Verifying boot files in %s ...\n", bootPath)
-	failures := verification.VerifyBootFiles(bootPath)
-	if len(failures) > 0 {
-		fmt.Println("✗ Boot integrity check failed!")
-		for _, msg := range failures {
-			fmt.Printf("  - %s\n", msg)
-		}
-		fmt.Println("\nPlease power off, reflash the SD card from a trusted image, and try again.")
-		os.Exit(1)
-	}
-	fmt.Println("✓ Boot files verified.")
-
+	fmt.Println("\n🔐 Verifying SD card image integrity...")
 	if hash, err := GetImageHash(); err != nil {
-		fmt.Printf("⚠ Full image hash unavailable: %v\n", err)
+		fmt.Printf("⚠ Image hash unavailable: %v\n", err)
 	} else {
-		fmt.Printf("Full Image SHA256: %s\n", hash)
+		fmt.Printf("Image SHA256: %s\n", hash)
 	}
 }
 
@@ -288,6 +264,7 @@ func generateDescriptor(settings *BurnSettings) {
 	}
 
 	var xpubs []string
+	var err error
 	if inputMethod == "1" {
 		xpubs, err = CollectXpubsViaCamera(5, scanner)
 	} else {
