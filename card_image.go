@@ -6,11 +6,14 @@ import (
 	"image/color"
 	"image/draw"
 	"strings"
+	"sync"
 
 	"github.com/skip2/go-qrcode"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
+	"golang.org/x/image/font/gofont/gomono"
+	"golang.org/x/image/font/opentype"
 )
 
 const (
@@ -27,6 +30,31 @@ const (
 	SeedQRSizePx = int(SeedQRSizeMM * DPI) // 400px
 )
 
+var (
+	midFace     font.Face
+	midFaceOnce sync.Once
+	midFaceErr  error
+)
+
+func midTextFace() font.Face {
+	midFaceOnce.Do(func() {
+		fnt, err := opentype.Parse(gomono.TTF)
+		if err != nil {
+			midFaceErr = err
+			return
+		}
+		midFace, midFaceErr = opentype.NewFace(fnt, &opentype.FaceOptions{
+			Size:    19.5, // ~50% larger than basicfont.Face7x13 (~13px)
+			DPI:     72,
+			Hinting: font.HintingFull,
+		})
+	})
+	if midFaceErr != nil {
+		return basicfont.Face7x13
+	}
+	return midFace
+}
+
 // GenerateCardImage creates in-memory PNG image with QR codes and text
 // Layout: MetadataQR (top) | Name+FP (middle) | SeedQR (bottom)
 func GenerateCardImage(data *CardData) (image.Image, error) {
@@ -39,14 +67,14 @@ func GenerateCardImage(data *CardData) (image.Image, error) {
 
 	// Generate MetadataQR (xpub:name format)
 	metadataStr := data.Xpub
-	metaQR, err := qrcode.New(metadataStr, qrcode.Medium)
+	metaQR, err := qrcode.New(metadataStr, qrcode.Low)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate metadata QR: %w", err)
 	}
 	metaQRImg := metaQR.Image(MetaQRSizePx)
 
 	// Generate SeedQR (mnemonic)
-	seedQR, err := qrcode.New(data.Mnemonic, qrcode.Medium)
+	seedQR, err := qrcode.New(data.Mnemonic, qrcode.Low)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate seed QR: %w", err)
 	}
@@ -60,13 +88,10 @@ func GenerateCardImage(data *CardData) (image.Image, error) {
 	metaX := centerX - MetaQRSizePx/2
 	drawImage(img, metaQRImg, metaX, metaY)
 
-	// Name and Fingerprint section (all caps name centered)
-	nameY := metaY + MetaQRSizePx + 20
-	drawTextWithFace(img, strings.TrimSpace(data.Name), centerX, nameY, color.White, basicfont.Face7x13)
-
-	fpY := nameY + 12
-	fpHex := fmt.Sprintf("%08x", data.Fingerprint)
-	drawTextWithFace(img, fpHex, centerX, fpY, color.White, basicfont.Face7x13)
+	// Name + fingerprint on one line (uppercase, larger font)
+	midLine := fmt.Sprintf("%s %08X", strings.ToUpper(strings.TrimSpace(data.Name)), data.Fingerprint)
+	midY := metaY + MetaQRSizePx + 24
+	drawTextWithFace(img, midLine, centerX, midY, color.White, midTextFace())
 
 	// SeedQR at bottom edge of card (touching bottom)
 	seedY := CardHeightPx - SeedQRSizePx
@@ -94,7 +119,7 @@ func GenerateDescriptorCardImage(descriptor string) (image.Image, error) {
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.Black}, image.Point{}, draw.Src)
 
 	// Generate Descriptor QR (larger size for long descriptor string)
-	descriptorQR, err := qrcode.New(descriptor, qrcode.Medium)
+	descriptorQR, err := qrcode.New(descriptor, qrcode.Low)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate descriptor QR: %w", err)
 	}

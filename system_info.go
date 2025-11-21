@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -32,67 +31,14 @@ func GetImageHash() (string, error) {
 	return imageHash, imageHashErr
 }
 
-// getImageSize determines the image size by reading the MBR partition table.
-// It calculates the end of the last partition to determine the actual image size.
+// getImageSize determines the image size. It must be present at /mnt/microsd/seedsafe_image_size.
 func getImageSize() (int64, error) {
-	// Support direct size via environment variable for testing
-	if sizeStr := os.Getenv("SEEDSAFE_IMAGE_SIZE"); sizeStr != "" {
-		size, err := strconv.ParseInt(strings.TrimSpace(sizeStr), 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("parse SEEDSAFE_IMAGE_SIZE: %w", err)
-		}
+	metadataPaths := []string{"/mnt/microsd/seedsafe_image_size"}
+	if size, err := readImageSizeFromPaths(metadataPaths); err == nil {
 		return size, nil
 	}
 
-	device := os.Getenv("SEEDSAFE_IMAGE_DEVICE")
-	if device == "" {
-		device = defaultImageDevice
-	}
-
-	f, err := os.Open(device)
-	if err != nil {
-		return 0, fmt.Errorf("open device %s: %w", device, err)
-	}
-	defer f.Close()
-
-	// Read MBR (first 512 bytes)
-	mbr := make([]byte, 512)
-	if _, err := io.ReadFull(f, mbr); err != nil {
-		return 0, fmt.Errorf("read MBR: %w", err)
-	}
-
-	// Verify MBR signature (0x55AA at offset 510)
-	if mbr[510] != 0x55 || mbr[511] != 0xAA {
-		return 0, errors.New("invalid MBR signature")
-	}
-
-	// Parse partition table entries (4 entries at offset 446, 16 bytes each)
-	var maxEnd int64
-	for i := 0; i < 4; i++ {
-		offset := 446 + (i * 16)
-
-		// Partition type at offset 4 (0 = unused)
-		partType := mbr[offset+4]
-		if partType == 0 {
-			continue
-		}
-
-		// LBA start at offset 8 (4 bytes, little-endian)
-		lbaStart := binary.LittleEndian.Uint32(mbr[offset+8 : offset+12])
-		// Number of sectors at offset 12 (4 bytes, little-endian)
-		numSectors := binary.LittleEndian.Uint32(mbr[offset+12 : offset+16])
-
-		partEnd := int64(lbaStart+numSectors) * 512
-		if partEnd > maxEnd {
-			maxEnd = partEnd
-		}
-	}
-
-	if maxEnd == 0 {
-		return 0, errors.New("no partitions found in MBR")
-	}
-
-	return maxEnd, nil
+	return 0, errors.New("image size unknown: ensure /mnt/microsd/seedsafe_image_size exists")
 }
 
 func computeImageHash() (string, error) {
@@ -112,6 +58,8 @@ func computeImageHash() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get image size: %w", err)
 	}
+
+	fmt.Printf("  Debug: hashing %d bytes from %s\n", imageSize, device)
 
 	f, err := os.Open(device)
 	if err != nil {
@@ -191,4 +139,30 @@ func parseCPUInfoSerial(contents string) string {
 // GetBurnDate returns today's date in YYYY-MM-DD (UTC).
 func GetBurnDate() string {
 	return time.Now().UTC().Format("2006-01-02")
+}
+
+func readImageSizeFromPaths(paths []string) (int64, error) {
+	for _, p := range paths {
+		size, err := readImageSizeFromFile(p)
+		if err == nil {
+			return size, nil
+		}
+	}
+	return 0, errors.New("not found")
+}
+
+func readImageSizeFromFile(path string) (int64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	sizeStr := strings.TrimSpace(string(data))
+	if sizeStr == "" {
+		return 0, errors.New("empty image size file")
+	}
+	size, err := strconv.ParseInt(sizeStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return size, nil
 }

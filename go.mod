@@ -19,4 +19,5 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
 )
